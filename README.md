@@ -1,15 +1,16 @@
 - [Kubernetes RBAC(Role-based access control)](#kubernetes-rbacrole-based-access-control)
-  - [Components of RBAC:](#components-of-rbac)
-    - [Users vs Service Accounts](#users-vs-service-accounts)
-  - [Provide Access at Namespace Level](#provide-access-at-namespace-level)
-    - [Create a Service Account](#create-a-service-account)
-    - [Configure kubectl with your Service Account](#configure-kubectl-with-your-service-account)
-    - [Create a Role](#create-a-role)
-    - [Create a RoleBinding](#create-a-rolebinding)
-    - [Verify your service account has been granted the Role’s Permissions](#verify-your-service-account-has-been-granted-the-roles-permissions)
-  - [Provide access at Cluster Level](#provide-access-at-cluster-level)
-    - [Create ClusterRole](#create-clusterrole)
-    - [Create ClusterRoleBinding](#create-clusterrolebinding)
+    - [Components of RBAC:](#components-of-rbac)
+      - [Users vs Service Accounts](#users-vs-service-accounts)
+    - [Provide Access at Namespace Level](#provide-access-at-namespace-level)
+      - [Create a Service Account](#create-a-service-account)
+      - [Configure kubectl with your Service Account](#configure-kubectl-with-your-service-account)
+      - [Create a Role](#create-a-role)
+      - [Create a RoleBinding](#create-a-rolebinding)
+      - [Verify your service account has been granted the Role’s Permissions](#verify-your-service-account-has-been-granted-the-roles-permissions)
+    - [Provide access at Cluster Level](#provide-access-at-cluster-level)
+      - [Create ClusterRole](#create-clusterrole)
+      - [Create ClusterRoleBinding](#create-clusterrolebinding)
+    - [Provide Access to KeyCloak and Ingress Namespaces](#provide-access-to-keycloak-and-ingress-namespaces)
 
 # Kubernetes RBAC(Role-based access control)
 
@@ -257,3 +258,63 @@ kubectl get pods -A
 ```
 
 Kubernetes provides default ClusterRoles such as `cluster-admin`, `view`, and `edit`. The `cluster-admin` role grants full access to perform any action on any resource within the cluster. Other default roles like `view` provide `read-only` access to cluster resources, and `edit` allows users to create, update, and delete resources, but not access sensitive information like secrets.
+
+### Provide Access to KeyCloak and Ingress Namespaces
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: access-logs
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch", "logs"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["*"]
+    resourceNames: [""] # Deny access to all secrets
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-namespace-access-binding
+  namespace: keycloak
+subjects:
+  - kind: ServiceAccount
+    name: $SERVICE_ACCOUNT_NAME
+    namespace: keycloak
+roleRef:
+  kind: ClusterRole
+  name: access-logs
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingress-namespace-access-binding
+  namespace: ingress-nginx
+subjects:
+  - kind: ServiceAccount
+    name: $SERVICE_ACCOUNT_NAME
+    namespace: ingress-nginx
+roleRef:
+  kind: ClusterRole
+  name: access-logs
+  apiGroup: rbac.authorization.k8s.io
+```
+
+Save the Role manifest to `access-log.yaml`, then use Kubectl to add it to your cluster:
+
+```bash
+kubectl apply -f access-log.yaml
+```
